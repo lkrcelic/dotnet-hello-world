@@ -1,34 +1,78 @@
-# ASP.NET
-# Build and test ASP.NET projects.
-# Add steps that publish symbols, save build artifacts, deploy, and more:
-# https://docs.microsoft.com/azure/devops/pipelines/apps/aspnet/build-aspnet-4
-
 trigger:
-- master
+  branches:
+    include:
+      - main
+      - master
+
+pr:
+  branches:
+    include:
+      - main
+      - master
 
 pool:
-  vmImage: 'windows-latest'
+  vmImage: ubuntu-latest
 
 variables:
-  solution: '**/*.sln'
-  buildPlatform: 'Any CPU'
-  buildConfiguration: 'Release'
+  buildConfiguration: Release
+  solution: dotnet-hello-world.sln
+  webProject: hello-world-api/hello-world-api.csproj
+  testProject: hello-world-api.Tests/hello-world-api.Tests.csproj
 
 steps:
-- task: NuGetToolInstaller@1
+  - checkout: self
+    clean: true
 
-- task: NuGetCommand@2
-  inputs:
-    restoreSolution: '$(solution)'
+  - task: UseDotNet@2
+    displayName: Install .NET 10 SDK
+    inputs:
+      packageType: sdk
+      version: 10.x
 
-- task: VSBuild@1
-  inputs:
-    solution: '$(solution)'
-    msbuildArgs: '/p:DeployOnBuild=true /p:WebPublishMethod=Package /p:PackageAsSingleFile=true /p:SkipInvalidConfigurations=true /p:PackageLocation="$(build.artifactStagingDirectory)"'
-    platform: '$(buildPlatform)'
-    configuration: '$(buildConfiguration)'
+  - script: dotnet --info
+    displayName: Show .NET information
 
-- task: VSTest@2
-  inputs:
-    platform: '$(buildPlatform)'
-    configuration: '$(buildConfiguration)'
+  - task: DotNetCoreCLI@2
+    displayName: Restore
+    inputs:
+      command: restore
+      projects: $(solution)
+
+  - task: DotNetCoreCLI@2
+    displayName: Build
+    inputs:
+      command: build
+      projects: $(solution)
+      arguments: --configuration $(buildConfiguration) --no-restore
+
+  - task: DotNetCoreCLI@2
+    displayName: Test
+    inputs:
+      command: test
+      projects: $(testProject)
+      arguments: --configuration $(buildConfiguration) --no-build --no-restore --logger trx
+      publishTestResults: true
+
+  - task: DotNetCoreCLI@2
+    displayName: Publish application
+    inputs:
+      command: publish
+      publishWebProjects: false
+      projects: $(webProject)
+      arguments: --configuration $(buildConfiguration) --no-build --no-restore --output $(Build.ArtifactStagingDirectory)/publish
+      zipAfterPublish: false
+
+  - task: ArchiveFiles@2
+    displayName: Create deployment ZIP
+    inputs:
+      rootFolderOrFile: $(Build.ArtifactStagingDirectory)/publish
+      includeRootFolder: false
+      archiveType: zip
+      archiveFile: $(Build.ArtifactStagingDirectory)/hello-world-api.zip
+      replaceExistingArchive: true
+
+  - task: PublishPipelineArtifact@1
+    displayName: Upload deployment package
+    inputs:
+      targetPath: $(Build.ArtifactStagingDirectory)/hello-world-api.zip
+      artifact: drop
