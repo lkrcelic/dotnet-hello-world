@@ -1,4 +1,3 @@
-```yaml
 trigger:
   branches:
     include:
@@ -118,4 +117,3 @@ steps:
       versionPublish: $(universalPackageVersion)
       packagePublishDescription: .NET 10 deployment package from build $(Build.BuildNumber)
       publishPackageMetadata: true
-```
