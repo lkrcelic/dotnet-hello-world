@@ -1,3 +1,4 @@
+```yaml
 trigger:
   branches:
     include:
@@ -18,6 +19,11 @@ variables:
   solution: dotnet-hello-world.sln
   webProject: hello-world-api/hello-world-api.csproj
   testProject: hello-world-api.Tests/hello-world-api.Tests.csproj
+
+  # Azure Artifacts settings
+  artifactFeed: NADEC/NADEC
+  universalPackageName: hello-world-api
+  universalPackageVersion: 1.0.$(Build.BuildId)
 
 steps:
   - checkout: self
@@ -43,14 +49,20 @@ steps:
     inputs:
       command: build
       projects: $(solution)
-      arguments: --configuration $(buildConfiguration) --no-restore
+      arguments: >-
+        --configuration $(buildConfiguration)
+        --no-restore
 
   - task: DotNetCoreCLI@2
     displayName: Test
     inputs:
       command: test
       projects: $(testProject)
-      arguments: --configuration $(buildConfiguration) --no-build --no-restore --logger trx
+      arguments: >-
+        --configuration $(buildConfiguration)
+        --no-build
+        --no-restore
+        --logger trx
       publishTestResults: true
 
   - task: DotNetCoreCLI@2
@@ -59,7 +71,11 @@ steps:
       command: publish
       publishWebProjects: false
       projects: $(webProject)
-      arguments: --configuration $(buildConfiguration) --no-build --no-restore --output $(Build.ArtifactStagingDirectory)/publish
+      arguments: >-
+        --configuration $(buildConfiguration)
+        --no-build
+        --no-restore
+        --output $(Build.ArtifactStagingDirectory)/publish
       zipAfterPublish: false
 
   - task: ArchiveFiles@2
@@ -71,8 +87,35 @@ steps:
       archiveFile: $(Build.ArtifactStagingDirectory)/hello-world-api.zip
       replaceExistingArchive: true
 
+  # Keeps the ZIP attached to this particular pipeline run.
   - task: PublishPipelineArtifact@1
-    displayName: Upload deployment package
+    displayName: Upload pipeline artifact
     inputs:
       targetPath: $(Build.ArtifactStagingDirectory)/hello-world-api.zip
       artifact: drop
+
+  # UniversalPackages publishes a directory, so copy the ZIP into
+  # a directory containing only the package content.
+  - task: CopyFiles@2
+    displayName: Prepare Azure Artifacts package
+    inputs:
+      SourceFolder: $(Build.ArtifactStagingDirectory)
+      Contents: hello-world-api.zip
+      TargetFolder: $(Build.ArtifactStagingDirectory)/universal-package
+      CleanTargetFolder: true
+
+  # Do not publish package versions from pull-request validation builds.
+  - task: UniversalPackages@0
+    displayName: Publish package to Azure Artifacts
+    condition: and(succeeded(), ne(variables['Build.Reason'], 'PullRequest'))
+    inputs:
+      command: publish
+      feedsToUsePublish: internal
+      publishDirectory: $(Build.ArtifactStagingDirectory)/universal-package
+      vstsFeedPublish: $(artifactFeed)
+      vstsFeedPackagePublish: $(universalPackageName)
+      versionOption: custom
+      versionPublish: $(universalPackageVersion)
+      packagePublishDescription: .NET 10 deployment package from build $(Build.BuildNumber)
+      publishPackageMetadata: true
+```
