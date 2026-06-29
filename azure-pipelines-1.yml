@@ -1,0 +1,57 @@
+trigger:
+- master
+
+pool:
+  vmImage: 'windows-latest'
+
+variables:
+  solution: '**/*.sln'
+  buildPlatform: 'Any CPU'
+  buildConfiguration: 'Release'
+  appProject: 'YourApp'                          # <-- your app project folder/name
+  publishDir: '$(Build.ArtifactStagingDirectory)\publish'
+
+steps:
+# 1. Pin a NuGet version on the agent
+- task: NuGetToolInstaller@1
+
+# 2. Restore packages for the whole solution
+- task: NuGetCommand@2
+  displayName: 'Restore'
+  inputs:
+    restoreSolution: '$(solution)'
+
+# 3. Build everything (app + tests) so VSTest has assemblies to run
+- task: VSBuild@1
+  displayName: 'Build solution'
+  inputs:
+    solution: '$(solution)'
+    platform: '$(buildPlatform)'
+    configuration: '$(buildConfiguration)'
+
+# 4. Run tests against the compiled output
+- task: VSTest@2
+  displayName: 'Run tests'
+  inputs:
+    platform: '$(buildPlatform)'
+    configuration: '$(buildConfiguration)'
+
+# 5. Stage ONLY the app's build output into a clean folder
+- task: CopyFiles@2
+  displayName: 'Stage app output'
+  inputs:
+    sourceFolder: '$(Build.SourcesDirectory)\$(appProject)\bin\$(buildConfiguration)'
+    contents: '**'
+    targetFolder: '$(publishDir)'
+
+# 6. Push the staged folder to Azure Artifacts as a Universal Package
+- task: UniversalPackages@0
+  displayName: 'Publish to Azure Artifacts'
+  inputs:
+    command: 'publish'
+    publishDirectory: '$(publishDir)'
+    feedsToUsePublish: 'internal'
+    vstsFeedPublish: 'YOUR_PROJECT/YOUR_FEED'
+    vstsFeedPackagePublish: 'mydesktopapp'
+    versionOption: 'patch'
+    packagePublishDescription: 'Build $(Build.BuildNumber)'
